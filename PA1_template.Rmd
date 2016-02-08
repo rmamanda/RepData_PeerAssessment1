@@ -1,25 +1,154 @@
----
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
----
+#Reproducible Research: Peer Assessment 1
+#Introduction
+
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the "quantified self" movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+The data for this assignment can be downloaded from the course web site:
+
+Dataset: [Activity monitoring data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip) [52K]
+
+steps: Number of steps taking in a 5-minute interval (missing values are coded as NA) 
+date: The date on which the measurement was taken in YYYY-MM-DD format 
+interval: Identifier for the 5-minute interval in which measurement was taken 
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset. 
+
+##Loading and preprocessing the data:
 
 
-## Loading and preprocessing the data
+```{r echo=TRUE, results="hide"}
+if(!file.exists("activity.csv")){
+    unzip("activity.zip", overwrite=TRUE)
+}
 
-
+activity <- read.csv("activity.csv",na.strings = "NA",sep=",")
+activity$date <- as.Date(activity$date)
+```
 
 ## What is mean total number of steps taken per day?
 
+1. Histogram of the total number of steps taken each day
 
+```{r echo=TRUE, result="asis",warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+total_byday<-activity%>%
+               group_by(date)%>% 
+                summarise_each(funs(sum(.,na.rm=TRUE)), steps)
+
+ggplot(data=total_byday, aes(x=date, y=steps)) + geom_histogram(stat="identity") + 
+    xlab("Dates") + ylab("Total number of steps") 
+```
+
+2. Mean and median total number of steps taken per day
+
+```{r echo=TRUE, result="asis",warning=FALSE, message=FALSE}
+steps_byday<-data.frame(activity%>%
+group_by(date)%>% 
+    summarise_each(funs(mean(.,na.rm=TRUE), median(.,na.rm=TRUE)), steps))
+head(steps_byday,100)
+```
 
 ## What is the average daily activity pattern?
 
+1. Time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
 
+```{r, echo=TRUE, result="asis"}
+mean_byinterval<-activity%>%
+               group_by(interval)%>% 
+                summarise_each(funs(mean(.,na.rm=TRUE)),steps)
 
-## Imputing missing values
+max<-mean_byinterval$interval[mean_byinterval$step==max(mean_byinterval$steps)]
 
+ggplot(mean_byinterval, aes(interval, steps)) + geom_line() + 
+     xlab("5-minute interval") + ylab("Average number of steps") + 
+     geom_vline(xintercept= max,linetype = "dashed", colour = "red") + 
+     geom_text(aes(x=max+100, label=max, y=max(mean_byinterval$steps)), colour="red")
+```
 
+2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+```{r, echo=TRUE, result="asis"}
+max
+```
+
+## Imputing missing values - Using the mean accross all dates by interval
+
+1. Total number of missing values in the dataset (i.e. the total number of rows with NAs)
+
+```{r echo=TRUE, result="asis"}
+colSums(is.na(activity))
+``` 
+
+2. Fill missing values : 
+   Strategy - Use the average number of steps taken, averaged across all days by 5-minute interval
+   
+3. New dataset that is equal to the original dataset but with the missing data filled in.
+
+```{r echo=TRUE, result="asis"}
+activity_noNAs <- activity
+
+for(i in 1:nrow(activity_noNAs)) {
+    if (is.na(activity_noNAs[i,]$steps)) {
+        activity_noNAs[i,]$steps <- mean_byinterval$steps[mean_byinterval$interval == activity[i,]$interval]
+    }
+}
+```
+
+4. Histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. 
+
+```{r echo=TRUE, result="asis"}
+total_byday_noNAs<-activity_noNAs%>%
+               group_by(date)%>% 
+                summarise_each(funs(sum(.,na.rm=TRUE)), steps)
+
+ggplot(data=total_byday_noNAs, aes(x=date, y=steps)) + geom_histogram(stat="identity") + 
+    xlab("Dates") + ylab("Total number of steps") 
+
+steps_byday_noNAs<-data.frame(activity_noNAs%>%
+group_by(date)%>% 
+    summarise_each(funs(mean(.,na.rm=TRUE), median(.,na.rm=TRUE)), steps))
+head(steps_byday_noNAs,100)
+``` 
+
+4. 1 Do these values differ from the estimates from the first part of the assignment?
+
+```{r echo=TRUE, result="asis"}
+steps_bind <- cbind(steps_byday, steps_byday_noNAs)
+names(steps_bind) <- c("before_date","before_mean","before_median","after_date","after_mean","after_median")
+steps_diff <- steps_bind$before_mean != steps_bind$after_mean | steps_bind$before_median != steps_bind$after_median
+steps_bind[is.na(steps_diff) | steps_diff,]
+``` 
+
+4. 2 What is the impact of imputing missing data on the estimates of the total daily number of steps?
+
+```{r echo=TRUE, result="asis"}
+total_bind <- cbind(total_byday, total_byday_noNAs)
+names(total_bind) <- c("before_date","before_steps","after_date","after_steps")
+total_diff <- total_bind$before_steps != total_bind$after_steps
+total_bind[is.na(total_diff) | total_diff,]
+``` 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+1. New factor variable in the dataset with two levels - "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
+
+```{r echo=TRUE, result="asis"}
+activity_noNAs<-mutate(activity_noNAs,weekday=
+                 ifelse (as.POSIXlt(date)$wday %in% c(0,6),"weekend","weekday"))
+
+```
+
+2. Panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). 
+
+```{r echo=TRUE, result="asis"}
+mean_byinterval<-activity_noNAs%>%
+               group_by(interval)%>% 
+                summarise_each(funs(mean(.,na.rm=TRUE)),steps)
+
+
+ggplot(activity_noNAs, aes(x=interval, y=steps)) + geom_line() + 
+    facet_grid(weekday ~ .) + xlab("5-minute interval") + ylab("Average number of steps") 
+
+```
